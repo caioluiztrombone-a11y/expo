@@ -1,22 +1,519 @@
----
-title: EAS Build
-sidebar_title: Introduction
-description: EAS Build is a hosted service for building app binaries for your Expo and React Native projects.
----
+import React, { useState, useEffect, useRef } from "react";
+import {
+View, Text, TouchableOpacity, TextInput, StyleSheet, Animated, ScrollView, Modal
+} from "react-native";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { Cube01Icon } from '@expo/styleguide-icons/outline/Cube01Icon';
+const IconeCinturao = ({ cor }) => (
+<View style={styles.cinturaoContainer}>
+<View style={[styles.cinturaoBase, { backgroundColor: cor === 'gold' ? '#FFD700' : '#E2E8F0' }]} />
+<View style={[styles.cinturaoCircle, { backgroundColor: cor === 'gold' ? '#B7791F' : '#94A3B8' }]} />
+</View>
+);
 
-import { BoxLink } from '~/ui/components/BoxLink';
-import { Collapsible } from '~/ui/components/Collapsible';
-import { NoIcon, YesIcon } from '~/ui/components/DocIcons';
-import { FAQ } from '~/ui/components/FAQ';
-import { RelatedSkills } from '~/ui/components/RelatedSkills';
-import { Terminal } from '~/ui/components/Snippet';
+const IconeMais = () => (
+<View style={styles.iconeMaisContainer}>
+<View style={styles.iconeMaisHorizontal} />
+<View style={styles.iconeMaisVertical} />
+</View>
+);
 
-**EAS Build** is a hosted Expo Application Services (EAS) service that builds app binaries (also called [standalone apps](/more/glossary-of-terms/#standalone-app)) for your Expo and React Native projects.
+const IconeEngrenagem = () => (
+<View style={styles.iconeEngrenagemContainer}>
+<View style={styles.iconeEngrenagemCentro} />
+<View style={[styles.iconeEngrenagemDente, { transform: [{ rotate: '0deg' }] }]} />
+<View style={[styles.iconeEngrenagemDente, { transform: [{ rotate: '45deg' }] }]} />
+<View style={[styles.iconeEngrenagemDente, { transform: [{ rotate: '90deg' }] }]} />
+<View style={[styles.iconeEngrenagemDente, { transform: [{ rotate: '135deg' }] }]} />
+</View>
+);
 
-EAS Build makes building your apps for distribution simple and easy to automate by providing defaults that work well for Expo and React Native projects out of the box, and by handling your app signing credentials for you (if you wish). It also makes sharing builds with your team easier than ever with [internal distribution](/build/internal-distribution/) (using [ad hoc](/build/internal-distribution/) and/or enterprise "universal" provisioning), deeply integrates with EAS Submit for app store submissions, and has first-class support for the [`expo-updates`](/build/updates/) library.
+const IconeLixeira = ({ cor = '#FFF' }) => (
+<View style={styles.iconeLixeiraContainer}>
+<View style={[styles.iconeLixeiraTampa, { backgroundColor: cor }]} />
+<View style={[styles.iconeLixeiraAlca, { borderColor: cor }]} />
+<View style={[styles.iconeLixeiraCorpo, { borderColor: cor }]}>
+<View style={[styles.iconeLixeiraLinha, { backgroundColor: cor }]} />
+<View style={[styles.iconeLixeiraLinha, { backgroundColor: cor }]} />
+</View>
+</View>
+);
 
+const LogoUfcCiems = () => (
+<View style={styles.logoContainerOuter}>
+<View style={styles.logoMolduraEsquerda} />
+<View style={styles.logoContainer}>
+<View style={styles.logoUfcQuadrado}>
+<Text style={styles.logoUfcTexto}>UFC</Text>
+</View>
+<View style={styles.logoDivisorVertical} />
+<View style={styles.logoCiemsContainer}>
+<Text style={styles.logoCiemsTexto}>CIEMS</Text>
+<Text style={styles.logoSubTexto}>CHAMPIONSHIP</Text>
+</View>
+</View>
+<View style={styles.logoMolduraDireita} />
+</View>
+);
+
+const ItemLutadorDeslocavel = ({ nome, index, totalItens, onReorder, onEdit, onDelete }) => {
+return (
+<View style={[styles.rowGerenciarCard, styles.elementoLarguraPadrao]}>
+<View style={styles.containerControlesDeslocamento}>
+<TouchableOpacity
+disabled={index === 0}
+style={[styles.botaoSetaDeslocar, index === 0 && { opacity: 0.1 }]}
+onPress={() => onReorder(index, -1)}
+>
+<Text style={styles.textoSeta}>▲</Text>
+</TouchableOpacity>
+<TouchableOpacity
+disabled={index === totalItens - 1}
+style={[styles.botaoSetaDeslocar, index === totalItens - 1 && { opacity: 0.1 }]}
+onPress={() => onReorder(index, 1)}
+>
+<Text style={styles.textoSeta}>▼</Text>
+</TouchableOpacity>
+</View>
+<TouchableOpacity style={styles.botaoGerenciarNome} onPress={onEdit}>
+<Text style={styles.textoBotaoCardLutador}>{nome}</Text>
+</TouchableOpacity>
+<TouchableOpacity style={styles.botaoExcluirLutador} onPress={onDelete}>
+<IconeLixeira cor="#FF0000" />
+</TouchableOpacity>
+</View>
+);
+};
+
+export default function App() {
+const [tela, setTela] = useState("menu_inicial");
+const [menuVisivel, setMenuVisivel] = useState(false);
+const [modoTreino, setModoTreino] = useState(false);
+const [valeCinturao, setValeCinturao] = useState(null);
+const [modalAbandonar, setModalAbandonar] = useState(false);
+const [modalRetornarLuta, setModalRetornarLuta] = useState(false);
+const [roundAcabouAviso, setRoundAcabouAviso] = useState(false);
+const [modalAlerta, setModalAlerta] = useState({ visivel: false, titulo: "", mensagem: "", acaoOk: null });
+const [modalConfirmarGeral, setModalConfirmarGeral] = useState({ visivel: false, titulo: "", mensagem: "", acaoSim: null });
+const [modalExcluirConfirm, setModalExcluirConfirm] = useState(false);
+const [lutadorParaExcluir, setLutadorParaExcluir] = useState(null);
+const [modalOpcoesLixeira, setModalOpcoesLixeira] = useState(false);
+const [lutadorSelecionadoLixeira, setLutadorSelecionadoLixeira] = useState(null);
+const [modalRecuperarConfirm, setModalRecuperarConfirm] = useState(false);
+const [modalApagarDefinitivoConfirm, setModalApagarDefinitivoConfirm] = useState(false);
+const [historicoEventos, setHistoricoEventos] = useState([]);
+const [lutadoresDB, setLutadoresDB] = useState({
+CARANGUEJO: ["Isaac The Dablio", "Miguel Bolinha", "Gonçalves", "João Caralhão", "Charles William", "William Pretão", "Pedro Bellingham", "Arthur Jackson", "Bryan Brancão", "Kaleb Khabib"],
+TUBARÃO: ["Arthur China", "Thallysson W", "Luís Adolfo", "Benio The Black", "Gabriel Vertssapen", "Enzo Dela Vega", "Luan Ologna", "Miguel Jesus"],
+FEMININO: ["Nina Di Casteli", "Joana The Pig", "Mc Soares", "Antonella Di Marco", "Volkova", "Mary", "Charlotte"],
+});
+const [lixeiraDB, setLixeiraDB] = useState([]);
+const [novoLutadorNome, setNovoLutadorNome] = useState("");
+const [categoriaSelecionada, setCategoriaSelecionada] = useState(null);
+const [lutadorSendoEditado, setLutadorSendoEditado] = useState(null);
+const [categoriaAntigaEditado, setCategoriaAntigaEditado] = useState(null);
+const [eventoEmAndamento, setEventoEmAndamento] = useState(null);
+const [inputEventoEspecial, setInputEventoEspecial] = useState("");
+const [idLutaAtiva, setIdLutaAtiva] = useState(null);
+const [lutaAtualIdx, setLutaAtualIdx] = useState(null);
+const [categoria, setCategoria] = useState(null);
+const [lutador1, setLutador1] = useState(null);
+const [lutador2, setLutador2] = useState(null);
+const [rounds, setRounds] = useState(null);
+const [roundAtual, setRoundAtual] = useState(1);
+const [vida1, setVida1] = useState(200);
+const [vida2, setVida2] = useState(200);
+const [turnos1, setTurnos1] = useState(0);
+const [turnos2, setTurnos2] = useState(0);
+const [vezDeQuem, setVezDeQuem] = useState(null);
+const [dano, setDano] = useState("");
+const [alvoSelecionado, setAlvoSelecionado] = useState(null);
+const [metodoSelecionado, setMetodoSelecionado] = useState(null);
+const [resultado, setResultado] = useState(null);
+const [itemSelecionado, setItemSelecionado] = useState(null);
+const [vencDecisaoTemp, setVencDecisaoTemp] = useState(null);
+const [pointsL1, setPointsL1] = useState("");
+const [pontosL2, setPontosL2] = useState("");
+const vidaMax = 200;
+const vidaAnim1 = useRef(new Animated.Value(vidaMax)).current;
+const vidaAnim2 = useRef(new Animated.Value(vidaMax)).current;
+const [carregado, setCarregado] = useState(false);
+
+const iniciarLuta = () => {
+setVida1(vidaMax);
+setVida2(vidaMax);
+setTurnos1(0);
+setTurnos2(0);
+setRoundAtual(1);
+setVezDeQuem(null);
+setAlvoSelecionado(null);
+setMetodoSelecionado(null);
+setRoundAcabouAviso(false);
+vidaAnim1.setValue(vidaMax);
+vidaAnim2.setValue(vidaMax);
+setTela("escolher_rounds");
+};
+
+const ordenarLutasDoEvento = (lutas, nomeEvento) => {
+if (!lutas || !Array.isArray(lutas)) return [];
+const nomeNormalizado = nomeEvento ? String(nomeEvento).toUpperCase().trim() : "";
+return [...lutas].sort((a, b) => {
+if (nomeNormalizado === "UFC MUNICH") {
+const pesoA = a.cinturao && a.corCinturao === 'silver' ? 2 : (a.cinturao && a.corCinturao === 'gold' ? 1 : 0);
+const pesoB = b.cinturao && b.corCinturao === 'silver' ? 2 : (b.cinturao && b.corCinturao === 'gold' ? 1 : 0);
+return pesoB - pesoA;
+} else {
+const pesoA = a.cinturao && a.corCinturao === 'gold' ? 2 : (a.cinturao && a.corCinturao === 'silver' ? 1 : 0);
+const pesoB = b.cinturao && b.corCinturao === 'gold' ? 2 : (b.cinturao && b.corCinturao === 'silver' ? 1 : 0);
+return pesoB - pesoA;
+}
+});
+};
+
+const mostrarAlertaCustom = (titulo, mensagem, acao = null) => {
+setModalAlerta({ visivel: true, titulo, mensagem: mensagem, acaoOk: acao });
+};
+
+const getLabelLutaPorArrayOriginal = (lutadorA, lutadorB) => {
+if (modoTreino) return "TREINO";
+if (!eventoEmAndamento || !eventoEmAndamento.lutasAgendadas) return "PRELIMINARY CARD";
+const idxOriginal = eventoEmAndamento.lutasAgendadas.findIndex(
+l => l.lutador1 === lutadorA && l.lutador2 === lutadorB
+);
+if (idxOriginal === 0) return "MAIN EVENT";
+if (idxOriginal === 1) return "CO-MAIN EVENT";
+return "PRELIMINARY CARD";
+};
+
+const getContagemLutas = (p1, p2) => {
+let contador = 1;
+historicoEventos.forEach(ev => {
+if(ev && ev.lutasAgendadas) {
+ev.lutasAgendadas.forEach(l => {
+if ((l.lutador1 === p1 && l.lutador2 === p2) || (l.lutador1 === p2 && l.lutador2 === p1)) {
+contador++;
+}
+});
+}
+});
+if (eventoEmAndamento && eventoEmAndamento.lutasAgendadas) {
+eventoEmAndamento.lutasAgendadas.forEach(l => {
+if ((l.lutador1 === p1 && l.lutador2 === p2) || (l.lutador1 === p2 && l.lutador2 === p1)) {
+contador++;
+}
+});
+}
+return contador > 1 ? contador : "";
+};
+
+const getProximoNumerado = () => {
+const numerados = historicoEventos.filter(ev => ev && ev.nome && /^UFC \d+$`/.test(ev.nome));
+if (numerados.length === 0) return 324;
+const nums = numerados.map(ev => parseInt(ev.nome.replace("UFC ", "")) || 0);
+return Math.max(...nums) + 1;
+};
+
+const getCartel = (nome) => {
+let v = 0, d = 0, e = 0;
+const todasLutas = historicoEventos.reduce((acc, ev) => acc.concat(ev.lutasAgendadas || []), []);
+todasLutas.forEach(l => {
+if (!l || !l.resultado) return;
+if (l.lutador1 === nome || l.lutador2 === nome) {
+if (l.resultado.metodo === "EMPATE") e++;
+else if (l.resultado.vencedor === nome) v++;
+else d++;
+}
+});
+return ``${v}-{e}`;
+};
+
+useEffect(() => {
+if (tela !== "luta") return;
+Animated.timing(vidaAnim1, {
+toValue: vida1,
+duration: 600,
+useNativeDriver: false
+}).start();
+if (vida1 <= 0) { finalizarLuta("TKO", lutador2, turnos2, roundAtual); }
+}, [vida1, tela]);
+
+useEffect(() => {
+if (tela !== "luta") return;
+Animated.timing(vidaAnim2, {
+toValue: vida2,
+duration: 600,
+useNativeDriver: false
+}).start();
+if (vida2 <= 0) { finalizarLuta("TKO", lutador1, turnos1, roundAtual); }
+}, [vida2, tela]);
+
+useEffect(() => {
+const salvarDados = async () => {
+if (carregado) {
+try {
+const dados = JSON.stringify({ historicoEventos, eventoEmAndamento, lutadoresDB, lixeiraDB });
+await AsyncStorage.setItem('ufc_dados', dados);
+} catch (e) {
+console.log("Erro ao salvar no AsyncStorage:", e);
+}
+}
+};
+salvarDados();
+}, [historicoEventos, eventoEmAndamento, lutadoresDB, lixeiraDB, carregado]);
+
+useEffect(() => {
+const carregarDados = async () => {
+try {
+const dadosSalvos = await AsyncStorage.getItem('ufc_dados');
+if (dadosSalvos) {
+const dados = JSON.parse(dadosSalvos);
+if (dados.historicoEventos) setHistoricoEventos(dados.historicoEventos);
+if (dados.eventoEmAndamento) setEventoEmAndamento(dados.eventoEmAndamento);
+if (dados.lutadoresDB) setLutadoresDB(dados.lutadoresDB);
+if (dados.lixeiraDB) setLixeiraDB(dados.lixeiraDB);
+}
+} catch (e) {
+console.log("Erro ao carregar dados do AsyncStorage:", e);
+} finally {
+setCarregado(true);
+}
+};
+carregarDados();
+}, []);
+
+const handleAdicionarLutador = () => {
+if(!novoLutadorNome.trim() || !categoriaSelecionada){
+mostrarAlertaCustom("ERRO", "PREENCHA O NOME E SELECIONE UMA CATEGORIA!");
+return;
+}
+const nomeNormalizado = novoLutadorNome.trim();
+const existeAtivo = Object.values(lutadoresDB).some(catList => (catList || []).includes(nomeNormalizado));
+if (existeAtivo) {
+mostrarAlertaCustom("ERRO", "JÁ EXISTE UM LUTADOR ATIVO COM ESSE NOME!");
+return;
+}
+setLutadoresDB(prev => ({
+...prev,
+[categoriaSelecionada]: [...(prev[categoriaSelecionada] || []), nomeNormalizado]
+}));
+mostrarAlertaCustom("SUCESSO", ${nomeNormalizado.toUpperCase()} ADICIONADO!`, () => {
+setNovoLutadorNome(""); setCategoriaSelecionada(null); setTela("menu_inicial");
+});
+};
+
+const handleSalvarEdicaoLutador = () => {
+if(!novoLutadorNome.trim() || !categoriaSelecionada){
+mostrarAlertaCustom("ERRO", "O NOME E A CATEGORIA NÃO PODEM FICAR VAZIOS!");
+return;
+}
+const nomeNovo = novoLutadorNome.trim();
+setLutadoresDB(prev => {
+const copiaCategoriaAntiga = (prev[categoriaAntigaEditado] || []).filter(l => l !== lutadorSendoEditado);
+let novoEstado = { ...prev, [categoriaAntigaEditado]: copiaCategoriaAntiga };
+novoEstado[categoriaSelecionada] = [...(novoEstado[categoriaSelecionada] || []), nomeNovo];
+return novoEstado;
+});
+mostrarAlertaCustom("SUCESSO", "LUTADOR ATUALIZADO!", () => {
+setNovoLutadorNome(""); setLutadorSendoEditado(null); setCategoriaSelecionada(null); setCategoriaAntigaEditado(null);
+setTela("gerenciar_lutadores");
+});
+};
+
+const handleReordenarLutadores = (indexAntigo, direcao) => {
+if(!lutadoresDB[categoria]) return;
+const listaAtual = [...lutadoresDB[categoria]];
+let novoIndex = indexAntigo + direcao;
+if (novoIndex < 0 || novoIndex >= listaAtual.length) return;
+const temp = listaAtual[indexAntigo];
+listaAtual[indexAntigo] = listaAtual[novoIndex];
+listaAtual[novoIndex] = temp;
+setLutadoresDB(prev => ({
+...prev,
+[categoria]: listaAtual
+}));
+};
+
+const acionarExclusaoLutador = (nome, catOrigem) => {
+setLutadorParaExcluir({ nome, categoria: catOrigem });
+setModalExcluirConfirm(true);
+};
+
+const confirmarMoverParaLixeira = () => {
+if (!lutadorParaExcluir) return;
+setLutadoresDB(prev => ({
+...prev,
+[lutadorParaExcluir.categoria]: (prev[lutadorParaExcluir.categoria] || []).filter(l => l !== lutadorParaExcluir.nome)
+}));
+setLixeiraDB(prev => [...prev, { nome: lutadorParaExcluir.nome, categoria: lutadorParaExcluir.categoria }]);
+setModalExcluirConfirm(false);
+setLutadorParaExcluir(null);
+mostrarAlertaCustom("AVISO", "LUTADOR MOVIDO PARA A LIXEIRA.");
+};
+
+const confirmarRecuperacao = () => {
+if (!lutadorSelecionadoLixeira) return;
+const { nome, categoria } = lutadorSelecionadoLixeira;
+setLutadoresDB(prev => ({
+...prev,
+[categoria]: [...(prev[categoria] || []), nome]
+}));
+setLixeiraDB(prev => prev.filter(l => l.nome !== nome));
+setModalRecuperarConfirm(false);
+setLutadorSelecionadoLixeira(null);
+setModalOpcoesLixeira(false);
+mostrarAlertaCustom("SUCESSO", "LUTADOR RECUPERADO COM SUCESSO!");
+};
+
+const confirmarApagarDefinitivo = () => {
+if (!lutadorSelecionadoLixeira) return;
+setLixeiraDB(prev => prev.filter(l => l.nome !== lutadorSelecionadoLixeira.nome));
+setModalApagarDefinitivoConfirm(false);
+setLutadorSelecionadoLixeira(null);
+setModalOpcoesLixeira(false);
+mostrarAlertaCustom("SUCESSO", "LUTADOR EXCLUÍDO PERMANENTEMENTE.");
+};
+
+const registrarTurno = (num) => {
+setAlvoSelecionado(null);
+let novosT1 = turnos1;
+let novosT2 = turnos2;
+if (num === 1) { novosT1 = Math.min(10, turnos1 + 1); setTurnos1(novosT1); setVezDeQuem(2); }
+else { novosT2 = Math.min(10, turnos2 + 1); setTurnos2(novosT2); setVezDeQuem(1); }
+if (novosT1 + novosT2 >= 20) {
+setRoundAcabouAviso(true);
+}
+};
+
+const processarProximoRound = () => {
+setRoundAcabouAviso(false);
+if (roundAtual < rounds) {
+setRoundAtual(r => r + 1);
+setTurnos1(0);
+setTurnos2(0);
+setVezDeQuem(null);
+} else {
+setTela("escolher_vencedor_decisao");
+}
+};
+
+const handleConfirmarAbandono = () => {
+setModalAbandonar(false);
+if (!modoTreino && eventoEmAndamento) {
+const novasLutas = eventoEmAndamento.lutasAgendadas.map(l => {
+if (l.idLuta === idLutaAtiva) {
+return {
+...l,
+status: "Interrompida",
+dadosSalvos: { vida1, vida2, turnos1, turnos2, roundAtual, rounds, vezDeQuem }
+};
+}
+return l;
+});
+setEventoEmAndamento({ ...eventoEmAndamento, lutasAgendadas: novasLutas });
+}
+resetarEstadosDeCombate();
+setTela(modoTreino ? "menu_inicial" : "continuar_evento");
+};
+
+const resetarEstadosDeCombate = () => {
+setVida1(200); setVida2(200); setTurnos1(0); setTurnos2(0); setRoundAtual(1);
+setMetodoSelecionado(null); setAlvoSelecionado(null); setVezDeQuem(null); setDano("");
+setPointsL1(""); setPontosL2(""); setVencDecisaoTemp(null); setRoundAcabouAviso(false);
+setIdLutaAtiva(null);
+};
+
+const finalizarLuta = (metodo, vencedor, turnoVenc, roundVenc, pontosDec = null) => {
+const res = {
+vencedor, metodo, round: roundVenc, turno: turnoVenc,
+lutador1, lutador2, tipoEventoLuta: getLabelLutaPorArrayOriginal(lutador1, lutador2),
+nomeDoEvento: modoTreino ? "TREINO" : eventoEmAndamento?.nome || "EVENTO", pontosDec
+};
+if (!modoTreino && eventoEmAndamento) {
+const novasLutas = eventoEmAndamento.lutasAgendadas.map(l => {
+if (l.idLuta === idLutaAtiva) {
+return { ...l, status: "Finalizada", resultado: res, dadosSalvos: null };
+}
+return l;
+});
+const novoEvento = { ...eventoEmAndamento, lutasAgendadas: novasLutas };
+setEventoEmAndamento(novoEvento);
+if (novasLutas.every(l => l.status === "Finalizada")) {
+setHistoricoEventos(prev => [novoEvento, ...prev]);
+}
+}
+setResultado(res);
+setTela("resultado");
+};
+
+const concluirLutaEResetar = () => {
+resetarEstadosDeCombate();
+if (modoTreino) {
+setModoTreino(false); setLutador1(null); setLutador2(null); setTela("menu_inicial");
+} else {
+if (eventoEmAndamento && eventoEmAndamento.lutasAgendadas.every(l => l.status === "Finalizada")) {
+setEventoEmAndamento(null); setTela("menu_inicial");
+} else {
+setTela("continuar_evento");
+}
+}
+};
+
+const handleEncerrarEventoManual = () => {
+if (!eventoEmAndamento) return;
+const lutasCompletas = eventoEmAndamento.lutasAgendadas.filter(l => l.status === "Finalizada");
+if (lutasCompletas.length > 0) {
+const eventoFiltradoParaHistorico = {
+...eventoEmAndamento,
+lutasAgendadas: lutasCompletas
+};
+setHistoricoEventos(prev => [eventoFiltradoParaHistorico, ...prev]);
+}
+setEventoEmAndamento(null);
+resetarEstadosDeCombate();
+setTela("menu_inicial");
+mostrarAlertaCustom("EVENTO FINALIZADO", "O evento foi encerrado. Lutas completas foram salvas e as incompletas foram apagadas.");
+};
+
+const renderTelaConteudo = () => {
+if (tela === "menu_inicial") return (
+<View style={styles.containerCentro}>
+<View style={styles.header}>
+<TouchableOpacity onPress={() => setMenuVisivel(true)} style={styles.hitboxMenu}>
+<Text style={styles.tresPontos}>⋮</Text>
+</TouchableOpacity>
+</View>
+<LogoUfcCiems />
+<TouchableOpacity style={[styles.botaoMainNeon, styles.elementoLarguraPadrao]} onPress={() => { setModoTreino(false); setLutador1(null); setLutador2(null); setCategoria(null); setTela("selecao_tipo_evento"); }}>
+<Text style={styles.textoBotaoMain}>CRIAR NOVO EVENTO</Text>
+</TouchableOpacity>
+<TouchableOpacity style={[styles.botaoSecundarioBorda, styles.elementoLarguraPadrao, {marginTop: 18}]} onPress={() => { setModoTreino(true); setLutaAtualIdx(0); setLutador1(null); setLutador2(null); setCategoria(null); setTela("agendar_lutas"); }}>
+<Text style={styles.textoBotaoSecundario}>LUTA RÁPIDA (TREINO)</Text>
+</TouchableOpacity>
+<TouchableOpacity style={[styles.botaoSecundarioBorda, styles.elementoLarguraPadrao, {marginTop: 18}, eventoEmAndamento && styles.botaoMainAtivoAzul]} onPress={() => eventoEmAndamento ? setTela("continuar_evento") : setModalAlerta({ visivel: true, titulo: "AVISO", mensagem: "NÃO HÁ EVENTO EM ANDAMENTO!" })}>
+<Text style={[styles.textoBotaoSecundario, eventoEmAndamento && {color: '#FFF'}]}>CONTINUAR EVENTO</Text>
+</TouchableOpacity>
+<View style={[styles.divisorLine, styles.elementoLarguraPadrao]} />
+<TouchableOpacity style={[styles.botaoSecundarioBorda, styles.elementoLarguraPadrao, {borderColor: 'rgba(255,255,255,0.15)'}]} onPress={() => { setNovoLutadorNome(""); setCategoriaSelecionada(null); setTela("adicionar_lutador"); }}>
+<View style={styles.rowBotaoComIcone}>
+<IconeMais />
+<Text style={styles.textoBotaoSecundarioBranco}>ADICIONAR LUTADOR</Text>
+</View>
+</TouchableOpacity>
+<TouchableOpacity style={[styles.botaoSecundarioBorda, styles.elementoLarguraPadrao, {marginTop: 18, borderColor: 'rgba(255,255,255,0.15)'}]} onPress={() => { setCategoria(null); setLutadorSendoEditado(null); setTela("gerenciar_lutadores"); }}>
+<View style={styles.rowBotaoComIcone}>
+<IconeEngrenagem />
+<Text style={styles.textoBotaoSecundarioBranco}>GERENCIAR LUTADORES</Text>
+</View>
+</TouchableOpacity>
+</View>
+);
+if (tela === "adicionar_lutador") return (
+<View style={styles.containerCentro}>
+<Text style={styles.titulo}>NOVO LUTADOR</Text>
+<TextInput style={[styles.inputPremium, styles.elementoLarguraPadrao]} placeholder="NOME DO LUTADOR" placeholderTextColor="#555" value={novoLutadorNome} onChangeText={setNovoLutadorNome} />
+<Text style={[styles.nomeLabel, {textAlign: 'center', marginVertical: 15}]}>SELECIONE A CATEGORIA:</Text>
+<View style={[styles.rowCategoriasTabs, styles.elementoLarguraPadrao]}>
+{Object.keys(lutadoresDB || {}).m
 EAS Build is also designed to work for any native project, whether or not you use Expo and React Native. It's the fastest way to get from `npx create-expo-app` or `npx @react-native-community/cli@latest init` to app stores.
 
 ## Quick start
